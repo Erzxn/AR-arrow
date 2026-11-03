@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CYBER-ARCHER // กริยาพิฆาต</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;800;900&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        * {
+            font-family: 'Prompt', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #030712;
+        }
+        /* Hardware Accelerated Mirrored Video Layer */
+        #webcam-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 1;
+            filter: brightness(0.6) contrast(1.15);
+        }
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+        }
+        .hud-glass {
+            background: rgba(9, 14, 26, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1.5px solid rgba(0, 240, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+        }
+        .font-cyber {
+            font-family: 'Orbitron', sans-serif;
+        }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden bg-slate-950 text-white">
+
+    <!-- Live Hardware-Accelerated Video -->
+    <video id="webcam-video" autoplay playsinline muted></video>
+
+    <!-- Overlay Canvas (Graphics, Bow, Arrows, Targets) -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Top Left: คะแนน & ลำดับข้อ -->
+    <div class="absolute top-3 left-3 sm:top-5 sm:left-5 z-20 pointer-events-none">
+        <div class="hud-glass rounded-2xl p-2.5 sm:p-3.5 min-w-[120px] sm:min-w-[140px]">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-[10px] font-cyber text-cyan-400 tracking-wider">SCORE</span>
+                <span id="score-val" class="text-xl sm:text-2xl font-black font-cyber text-cyan-300">0</span>
+            </div>
+            <div class="text-[11px] sm:text-xs font-bold text-slate-400 mt-0.5 border-t border-slate-700/60 pt-1">
+                ข้อที่: <span id="current-question-text" class="text-white">1/15</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Center: เวลาถอยหลัง -->
+    <div class="absolute top-3 sm:top-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+        <div class="hud-glass text-cyan-400 font-cyber font-black text-sm sm:text-lg px-5 sm:px-7 py-1 rounded-full border border-cyan-400/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]">
+            <span id="timer-text">00:30</span>
+        </div>
+    </div>
+
+    <!-- Top Right: การ์ดสถานะการจับมือ และ FPS -->
+    <div class="absolute top-3 right-3 sm:top-5 sm:right-5 z-20 pointer-events-none">
+        <div class="hud-glass rounded-2xl p-2.5 sm:p-3 text-[10px] sm:text-xs font-bold space-y-1 text-right">
+            <div id="hand-left-status" class="text-rose-400">มือซ้าย (ธนู): ไม่พบ</div>
+            <div id="hand-right-status" class="text-rose-400">มือขวา (สาย): ไม่พบ</div>
+            <div id="fps-counter" class="text-[9px] sm:text-[10px] text-emerald-400 font-cyber">ENGINE: 60 FPS</div>
+        </div>
+    </div>
+
+    <!-- Right Controls Panel -->
+    <div class="absolute bottom-4 right-3 sm:bottom-6 sm:right-5 z-20 flex flex-col gap-2 pointer-events-auto">
+        <button id="btn-toggle-sound" class="bg-cyan-500/20 hover:bg-cyan-500/30 active:scale-95 text-cyan-300 font-bold text-[11px] sm:text-xs px-3.5 py-2 rounded-xl border border-cyan-400/40 backdrop-blur-md transition-all cursor-pointer">
+            🔊 เสียง: <span id="sound-label">เปิด</span>
+        </button>
+        <button id="btn-switch-hand" class="bg-slate-900/80 hover:bg-slate-800 active:scale-95 text-slate-300 font-bold text-[11px] sm:text-xs px-3.5 py-2 rounded-xl border border-slate-700 backdrop-blur-md transition-all cursor-pointer">
+            🔄 สลับมือ: <span id="hand-swap-label">ปิด</span>
+        </button>
+        <button id="btn-toggle-landmarks" class="bg-slate-900/80 hover:bg-slate-800 active:scale-95 text-slate-300 font-bold text-[11px] sm:text-xs px-3.5 py-2 rounded-xl border border-slate-700 backdrop-blur-md transition-all cursor-pointer">
+            👁️ จุดมือ: <span id="landmarks-label">เปิด</span>
+        </button>
+        <button id="btn-restart" class="bg-rose-500/30 hover:bg-rose-500/40 active:scale-95 text-rose-300 font-bold text-[11px] sm:text-xs px-3.5 py-2 rounded-xl border border-rose-500/50 backdrop-blur-md transition-all cursor-pointer">
+            🔁 เริ่มใหม่
+        </button>
+    </div>
+
+    <!-- Center Floating Action Hint -->
+    <div id="action-hint" class="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center bg-slate-900/90 backdrop-blur-md px-6 py-2 rounded-full border border-cyan-400/50 text-cyan-300 text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(0,240,255,0.2)]">
+        ✊ กำมือขวาเพื่อดึงสายธนู | ✋ แบมือเพื่อยิง
+    </div>
+
+    <!-- Start Modal -->
+    <div id="start-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-slate-900/90 rounded-3xl p-6 sm:p-8 text-center border-2 border-cyan-400 shadow-[0_0_30px_rgba(0,240,255,0.25)]">
+            <h2 class="text-2xl sm:text-3xl font-black font-cyber text-cyan-400 tracking-wide mb-1 drop-shadow-[0_0_10px_rgba(0,240,255,0.8)]">
+                CYBER-ARCHER
+            </h2>
+            <div class="text-xs sm:text-sm font-bold text-slate-300 mb-2">เกม AR ยิงธนูสู้คำกริยา</div>
+            
+            <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 my-4 text-left text-xs sm:text-sm space-y-2 text-slate-300 font-medium">
+                <div>🏹 <b class="text-white">มือซ้าย:</b> ถือคันธนูพลังงาน</div>
+                <div>✊ <b class="text-cyan-400">มือขวากำหมัด:</b> ดึงสายธนู</div>
+                <div>✋ <b class="text-emerald-400">มือขวาแบมือ:</b> ปล่อยลูกศรพุ่งโจมตี</div>
+                <div class="text-amber-400 font-bold pt-1">🎯 ภารกิจ: ยิงเฉพาะออร์บที่เป็น "คำกริยา" เท่านั้น!</div>
+            </div>
+
+            <button id="btn-init-system" class="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 active:scale-95 text-slate-950 font-black font-cyber text-base sm:text-lg shadow-[0_0_25px_rgba(0,240,255,0.5)] transition-all cursor-pointer">
+                INITIALIZE SYSTEM
+            </button>
+            <p id="error-alert" class="text-rose-400 text-xs font-bold mt-3 hidden"></p>
+        </div>
+    </div>
+
+    <script>
+        // ================= Web Audio API Synthesizer =================
+        let audioCtx = null;
+        let isAudioEnabled = true;
+
+        function getAudioContext() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            return audioCtx;
+        }
+
+        function playSfx(type) {
+            if (!isAudioEnabled) return;
+            try {
+                const ctx = getAudioContext();
+                const now = ctx.currentTime;
+                if (type === 'stretch') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(140, now);
+                    osc.frequency.exponentialRampToValueAtTime(360, now + 0.12);
+                    gain.gain.setValueAtTime(0.06, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                } else if (type === 'shoot') {
+                    const bufferSize = ctx.sampleRate * 0.15;
+                    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buffer;
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'bandpass';
+                    filter.frequency.setValueAtTime(1800, now);
+                    filter.frequency.exponentialRampToValueAtTime(300, now + 0.15);
+                    const gain = ctx.createGain();
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(ctx.destination);
+                    noise.start(now);
+                } else if (type === 'hit_correct') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, now);
+                    osc.frequency.setValueAtTime(880, now + 0.08);
+                    osc.frequency.setValueAtTime(1174.66, now + 0.15);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'hit_wrong') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(160, now);
+                    osc.frequency.linearRampToValueAtTime(80, now + 0.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                }
+            } catch (e) {}
+        }
+
+        // คลังคำศัพท์ 15 ข้อ
+        const questionBank = [
+            { options: [{ word: "วิ่ง", isVerb: true, color: "#00ff9d" }, { word: "แมว", isVerb: false, color: "#ff007f" }, { word: "ต้นไม้", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "เก้าอี้", isVerb: false, color: "#00f0ff" }, { word: "กิน", isVerb: true, color: "#00ff9d" }, { word: "สมุด", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "บิน", isVerb: true, color: "#00ff9d" }, { word: "บ้าน", isVerb: false, color: "#ff007f" }, { word: "แม่น้ำ", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "รถยนต์", isVerb: false, color: "#00f0ff" }, { word: "กระโดด", isVerb: true, color: "#00ff9d" }, { word: "ปากกา", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "นอน", isVerb: true, color: "#00ff9d" }, { word: "โทรศัพท์", isVerb: false, color: "#ff007f" }, { word: "ดวงอาทิตย์", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "ร้องไห้", isVerb: true, color: "#00ff9d" }, { word: "เสื้อผ้า", isVerb: false, color: "#ff007f" }, { word: "จักรยาน", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "จาน", isVerb: false, color: "#00f0ff" }, { word: "ว่ายน้ำ", isVerb: true, color: "#00ff9d" }, { word: "โต๊ะ", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "เขียน", isVerb: true, color: "#00ff9d" }, { word: "พัดลม", isVerb: false, color: "#ff007f" }, { word: "ดินสอ", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "รองเท้า", isVerb: false, color: "#00f0ff" }, { word: "หัวเราะ", isVerb: true, color: "#00ff9d" }, { word: "นาฬิกา", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "อ่าน", isVerb: true, color: "#00ff9d" }, { word: "กระเป๋า", isVerb: false, color: "#ff007f" }, { word: "แว่นตา", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "ดื่ม", isVerb: true, color: "#00ff9d" }, { word: "ขวดน้ำ", isVerb: false, color: "#ff007f" }, { word: "จานข้าว", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "ประตู", isVerb: false, color: "#00f0ff" }, { word: "เต้น", isVerb: true, color: "#00ff9d" }, { word: "หน้าต่าง", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "เดิน", isVerb: true, color: "#00ff9d" }, { word: "หลอดไฟ", isVerb: false, color: "#ff007f" }, { word: "สะพาน", isVerb: false, color: "#00f0ff" }] },
+            { options: [{ word: "คอมพิวเตอร์", isVerb: false, color: "#00f0ff" }, { word: "ร้องเพลง", isVerb: true, color: "#00ff9d" }, { word: "ไมโครโฟน", isVerb: false, color: "#ff007f" }] },
+            { options: [{ word: "ตัด", isVerb: true, color: "#00ff9d" }, { word: "กรรไกร", isVerb: false, color: "#ff007f" }, { word: "กระดาษ", isVerb: false, color: "#00f0ff" }] }
+        ];
+
+        let score = 0;
+        let questionIndex = 0;
+        let timeLeft = 30;
+        let timerInterval = null;
+        let isHandSwapped = false;
+        let showLandmarks = true;
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d', { alpha: true });
+        const video = document.getElementById('webcam-video');
+
+        const scoreVal = document.getElementById('score-val');
+        const qText = document.getElementById('current-question-text');
+        const timerText = document.getElementById('timer-text');
+        const handLeftStatus = document.getElementById('hand-left-status');
+        const handRightStatus = document.getElementById('hand-right-status');
+        const actionHint = document.getElementById('action-hint');
+        const fpsCounter = document.getElementById('fps-counter');
+
+        const btnToggleSound = document.getElementById('btn-toggle-sound');
+        const soundLabel = document.getElementById('sound-label');
+        const btnSwitchHand = document.getElementById('btn-switch-hand');
+        const handSwapLabel = document.getElementById('hand-swap-label');
+        const btnToggleLandmarks = document.getElementById('btn-toggle-landmarks');
+        const landmarksLabel = document.getElementById('landmarks-label');
+        const btnRestart = document.getElementById('btn-restart');
+
+        let targets = [];
+        let particles = [];
+        let arrows = [];
+
+        let bowHand = null;
+        let drawHand = null;
+        let isAiming = false;
+        let drawDistance = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function loadQuestion(idx) {
+            if (idx >= questionBank.length) {
+                alert(`MISSION COMPLETE! คะแนนรวม: ${score}`);
+                idx = 0;
+                score = 0;
+            }
+            questionIndex = idx;
+            scoreVal.textContent = score;
+            qText.textContent = `${questionIndex + 1}/${questionBank.length}`;
+            timeLeft = 30;
+
+            const q = questionBank[questionIndex];
+            const startX = canvas.width * 0.22;
+            const radius = Math.min(canvas.width, canvas.height) * 0.055;
+
+            targets = q.options.map((opt, i) => ({
+                word: opt.word,
+                isVerb: opt.isVerb,
+                color: opt.color,
+                x: startX,
+                y: -100 - (i * radius * 2.3),
+                targetY: canvas.height * 0.38 + (i * radius * 2.1),
+                radius: radius,
+                vy: 6
+            }));
+        }
+
+        // ================= แปลงพิกัดกล้องเป็นพิกัดหน้าจอแบบเป๊ะ 100% (รองรับมือถือ) =================
+        function mapLandmarkToScreen(lm) {
+            const vw = video.videoWidth || 640;
+            const vh = video.videoHeight || 480;
+            const sw = canvas.width;
+            const sh = canvas.height;
+
+            const videoAspect = vw / vh;
+            const screenAspect = sw / sh;
+
+            let renderW, renderH, offsetX, offsetY;
+            if (screenAspect > videoAspect) {
+                renderW = sw;
+                renderH = sw / videoAspect;
+                offsetX = 0;
+                offsetY = (sh - renderH) / 2;
+            } else {
+                renderH = sh;
+                renderW = sh * videoAspect;
+                offsetX = (sw - renderW) / 2;
+                offsetY = 0;
+            }
+
+            // Mirror X
+            const x = (1 - lm.x) * renderW + offsetX;
+            const y = lm.y * renderH + offsetY;
+            return { x, y };
+        }
+
+        // ================= MediaPipe Hands & Throttled Processing =================
+        let handsAI = null;
+        let isProcessingFrame = false;
+        let lastAiRun = 0;
+        const AI_THROTTLE_MS = 38; // จำกัดรอบประมวลผล AI (~25 FPS) ลดโหลด CPU ให้เหลือพลังรัน Canvas 60 FPS
+
+        async function initEngine() {
+            const btnInit = document.getElementById('btn-init-system');
+            const errAlert = document.getElementById('error-alert');
+            btnInit.textContent = "INITIALIZING HARDWARE...";
+            btnInit.disabled = true;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30, max: 30 }
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+                await video.play();
+
+                handsAI = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                });
+
+                handsAI.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 0, // Lite Engine
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                handsAI.onResults(onHandResults);
+
+                processCameraFrame();
+
+                document.getElementById('start-modal').classList.add('hidden');
+                startGame();
+
+            } catch (err) {
+                console.error(err);
+                errAlert.textContent = "เข้าถึงกล้องไม่สำเร็จ: " + err.message;
+                errAlert.classList.remove('hidden');
+                btnInit.textContent = "RETRY";
+                btnInit.disabled = false;
+            }
+        }
+
+        async function processCameraFrame() {
+            const now = performance.now();
+            if (!isProcessingFrame && video.readyState >= 2 && (now - lastAiRun >= AI_THROTTLE_MS)) {
+                isProcessingFrame = true;
+                lastAiRun = now;
+                try {
+                    await handsAI.send({ image: video });
+                } catch (e) {}
+                isProcessingFrame = false;
+            }
+            requestAnimationFrame(processCameraFrame);
+        }
+
+        function checkFist(landmarks) {
+            const wrist = landmarks[0];
+            const tips = [8, 12, 16, 20];
+            const mcp = [5, 9, 13, 17];
+            let foldedCount = 0;
+            for (let i = 0; i < 4; i++) {
+                const tip = landmarks[tips[i]];
+                const base = landmarks[mcp[i]];
+                const dTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+                const dBase = Math.hypot(base.x - wrist.x, base.y - wrist.y);
+                if (dTip < dBase * 1.15) foldedCount++;
+            }
+            return foldedCount >= 3;
+        }
+
+        let rawHands = [];
+        function onHandResults(results) {
+            rawHands = results.multiHandLandmarks || [];
+            bowHand = null;
+            drawHand = null;
+
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const lm = results.multiHandLandmarks[i];
+                    const label = results.multiHandedness[i].label;
+
+                    const screenPt = mapLandmarkToScreen(lm[9]);
+                    const isFist = checkFist(lm);
+
+                    const isBow = isHandSwapped ? (label === 'Right') : (label === 'Left');
+
+                    if (isBow) {
+                        bowHand = { x: screenPt.x, y: screenPt.y, landmarks: lm };
+                    } else {
+                        drawHand = { x: screenPt.x, y: screenPt.y, isFist: isFist, landmarks: lm };
+                    }
+                }
+            }
+
+            if (bowHand) {
+                handLeftStatus.textContent = `มือซ้าย (ธนู): พร้อม`;
+                handLeftStatus.className = "text-cyan-400";
+            } else {
+                handLeftStatus.textContent = `มือซ้าย (ธนู): ไม่พบ`;
+                handLeftStatus.className = "text-rose-400";
+            }
+
+            if (drawHand) {
+                handRightStatus.textContent = `มือขวา (สาย): ${drawHand.isFist ? '✊ กำสาย' : '✋ แบมือ'}`;
+                handRightStatus.className = drawHand.isFist ? "text-amber-400" : "text-emerald-400";
+            } else {
+                handRightStatus.textContent = `มือขวา (สาย): ไม่พบ`;
+                handRightStatus.className = "text-rose-400";
+            }
+
+            handleArcheryMechanics();
+        }
+
+        function handleArcheryMechanics() {
+            if (bowHand && drawHand) {
+                const dist = Math.hypot(drawHand.x - bowHand.x, drawHand.y - bowHand.y);
+                const maxPull = canvas.width * 0.35;
+
+                if (drawHand.isFist) {
+                    if (!isAiming) playSfx('stretch');
+                    isAiming = true;
+                    drawDistance = Math.min(dist, maxPull);
+                    actionHint.textContent = `🏹 CHARGING ENERGY... (${Math.round((drawDistance / maxPull) * 100)}%) แบมือเพื่อปล่อย!`;
+                    actionHint.className = "absolute bottom-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center bg-cyan-500/90 text-slate-950 px-6 py-2 rounded-full font-black shadow-[0_0_20px_#00f0ff]";
+                } else if (isAiming && !drawHand.isFist) {
+                    if (drawDistance > 30) {
+                        shootArrow(bowHand, drawHand, drawDistance);
+                    }
+                    isAiming = false;
+                    drawDistance = 0;
+                    actionHint.textContent = "✊ กำมือขวาเพื่อดึงสายธนู | ✋ แบมือเพื่อยิง";
+                    actionHint.className = "absolute bottom-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center bg-slate-900/90 text-cyan-300 px-6 py-2 rounded-full font-bold shadow-[0_0_20px_rgba(0,240,255,0.2)]";
+                }
+            } else {
+                isAiming = false;
+                drawDistance = 0;
+            }
+        }
+
+        function shootArrow(bow, draw, power) {
+            playSfx('shoot');
+            const angle = Math.atan2(bow.y - draw.y, bow.x - draw.x);
+            const speed = 22 + (power * 0.08);
+
+            arrows.push({
+                x: bow.x,
+                y: bow.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                angle: angle,
+                length: 65
+            });
+        }
+
+        function startGame() {
+            loadQuestion(0);
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const min = String(Math.floor(timeLeft / 60)).padStart(2, '0');
+                const sec = String(timeLeft % 60).padStart(2, '0');
+                timerText.textContent = `${min}:${sec}`;
+
+                if (timeLeft <= 0) {
+                    playSfx('hit_wrong');
+                    loadQuestion(questionIndex + 1);
+                }
+            }, 1000);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ================= Game Render Loop =================
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+
+        function gameLoop(now) {
+            frameCount++;
+            if (now - lastFrameTime >= 1000) {
+                fpsCounter.textContent = `ENGINE: ${frameCount} FPS`;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. เส้นแบ่งโซนเป้าหมาย
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
+            ctx.setLineDash([8, 8]);
+            ctx.lineWidth = 2;
+            const lineX = canvas.width * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(lineX, 0);
+            ctx.lineTo(lineX, canvas.height);
+            ctx.stroke();
+            ctx.restore();
+
+            // 2. จุดกระดูกมือ Landmarks
+            if (showLandmarks && rawHands.length > 0) {
+                ctx.save();
+                ctx.fillStyle = '#00f0ff';
+                for (let h = 0; h < rawHands.length; h++) {
+                    const lm = rawHands[h];
+                    for (let p = 0; p < lm.length; p++) {
+                        const pt = mapLandmarkToScreen(lm[p]);
+                        ctx.beginPath();
+                        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+
+            // 3. วาดออร์บคำศัพท์เรืองแสง
+            targets.forEach(t => {
+                if (t.y < t.targetY) t.y += t.vy;
+
+                ctx.save();
+                // Glow
+                ctx.shadowColor = t.color;
+                ctx.shadowBlur = 18;
+
+                const grad = ctx.createRadialGradient(
+                    t.x - t.radius * 0.3, t.y - t.radius * 0.3, t.radius * 0.1,
+                    t.x, t.y, t.radius
+                );
+                grad.addColorStop(0, '#ffffff');
+                grad.addColorStop(0.4, t.color);
+                grad.addColorStop(1, '#050b14');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, t.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                const fontSize = Math.max(14, t.radius * 0.45);
+                ctx.font = `900 ${fontSize}px 'Prompt'`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                const textWidth = ctx.measureText(t.word).width + 16;
+                ctx.fillStyle = 'rgba(3, 7, 18, 0.9)';
+                ctx.roundRect(t.x - textWidth / 2, t.y - fontSize * 0.75, textWidth, fontSize * 1.5, 8);
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(t.word, t.x, t.y);
+                ctx.restore();
+            });
+
+            // 4. วาดคันธนูพลังงาน
+            renderBow();
+
+            // 5. วาดลูกศร
+            renderArrows();
+
+            // 6. วาดละออง Particle
+            renderParticles();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function renderBow() {
+            const bx = bowHand ? bowHand.x : canvas.width * 0.75;
+            const by = bowHand ? bowHand.y : canvas.height * 0.5;
+            const pullX = (isAiming && drawHand) ? drawHand.x : bx + 25;
+            const pullY = (isAiming && drawHand) ? drawHand.y : by;
+
+            const bowHeight = Math.min(canvas.width, canvas.height) * 0.28;
+            const bowBend = isAiming ? Math.min(60, drawDistance * 0.25) : 35;
+
+            ctx.save();
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 10;
+            ctx.lineCap = 'round';
+            ctx.bezierCurveTo(
+                bx + bowBend, by - bowHeight / 2,
+                bx + bowBend, by + bowHeight / 2,
+                bx, by + bowHeight / 2
+            );
+            ctx.moveTo(bx, by - bowHeight / 2);
+            ctx.bezierCurveTo(
+                bx + bowBend, by - bowHeight / 2,
+                bx + bowBend, by + bowHeight / 2,
+                bx, by + bowHeight / 2
+            );
+            ctx.stroke();
+
+            // สายธนูเลเซอร์
+            ctx.beginPath();
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 8;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.moveTo(bx, by - bowHeight / 2);
+            ctx.lineTo(pullX, pullY);
+            ctx.lineTo(bx, by + bowHeight / 2);
+            ctx.stroke();
+
+            if (isAiming) {
+                const angle = Math.atan2(by - pullY, bx - pullX);
+                ctx.save();
+                ctx.translate(pullX, pullY);
+                ctx.rotate(angle);
+                ctx.shadowColor = '#00ff9d';
+                ctx.shadowBlur = 12;
+                ctx.strokeStyle = '#00ff9d';
+                ctx.fillStyle = '#00ff9d';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(drawDistance + 35, 0);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(drawDistance + 35, -7);
+                ctx.lineTo(drawDistance + 50, 0);
+                ctx.lineTo(drawDistance + 35, 7);
+                ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        function renderArrows() {
+            for (let i = arrows.length - 1; i >= 0; i--) {
+                const a = arrows[i];
+                a.x += a.vx;
+                a.y += a.vy;
+
+                ctx.save();
+                ctx.translate(a.x, a.y);
+                ctx.rotate(a.angle);
+                ctx.shadowColor = '#00f0ff';
+                ctx.shadowBlur = 12;
+                ctx.strokeStyle = '#00f0ff';
+                ctx.fillStyle = '#00f0ff';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(-a.length, 0);
+                ctx.lineTo(0, 0);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, -6);
+                ctx.lineTo(12, 0);
+                ctx.lineTo(0, 6);
+                ctx.fill();
+                ctx.restore();
+
+                for (let j = 0; j < targets.length; j++) {
+                    const t = targets[j];
+                    if (Math.hypot(a.x - t.x, a.y - t.y) < t.radius) {
+                        createExplosion(t.x, t.y, t.color);
+                        if (t.isVerb) {
+                            playSfx('hit_correct');
+                            score += 10;
+                            actionHint.textContent = `🎯 ยอดเยี่ยม! "${t.word}" เป็นคำกริยา (+10 คะแนน)`;
+                            actionHint.className = "absolute bottom-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center bg-emerald-500 text-slate-950 px-6 py-2 rounded-full font-black shadow-[0_0_20px_#00ff9d]";
+                            setTimeout(() => loadQuestion(questionIndex + 1), 700);
+                        } else {
+                            playSfx('hit_wrong');
+                            score = Math.max(0, score - 5);
+                            actionHint.textContent = `❌ ผิด! "${t.word}" เป็นคำนาม ไม่ใช่คำกริยา (-5 คะแนน)`;
+                            actionHint.className = "absolute bottom-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-center bg-rose-500 text-white px-6 py-2 rounded-full font-bold shadow-[0_0_20px_#ff007f]";
+                        }
+                        scoreVal.textContent = score;
+                        arrows.splice(i, 1);
+                        break;
+                    }
+                }
+
+                if (a.x < -100 || a.x > canvas.width + 100 || a.y < -100 || a.y > canvas.height + 100) {
+                    arrows.splice(i, 1);
+                }
+            }
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 22; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 3 + Math.random() * 7;
+                particles.push({
+                    x: x, y: y,
+                    vx: Math.cos(ang) * spd,
+                    vy: Math.sin(ang) * spd,
+                    color: color,
+                    life: 1,
+                    radius: 3 + Math.random() * 3
+                });
+            }
+        }
+
+        function renderParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.04;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('btn-init-system').addEventListener('click', initEngine);
+
+        btnToggleSound.addEventListener('click', () => {
+            isAudioEnabled = !isAudioEnabled;
+            soundLabel.textContent = isAudioEnabled ? "เปิด" : "ปิด";
+        });
+
+        btnSwitchHand.addEventListener('click', () => {
+            isHandSwapped = !isHandSwapped;
+            handSwapLabel.textContent = isHandSwapped ? "เปิด" : "ปิด";
+        });
+
+        btnToggleLandmarks.addEventListener('click', () => {
+            showLandmarks = !showLandmarks;
+            landmarksLabel.textContent = showLandmarks ? "เปิด" : "ปิด";
+        });
+
+        btnRestart.addEventListener('click', () => {
+            score = 0;
+            loadQuestion(0);
+        });
+
+        // ล็อกไม่ให้ใช้เมาส์หรือการแตะหน้าจอเพื่อยิงเด็ดขาด
+        window.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('button') && !e.target.closest('#start-modal')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+
+        window.addEventListener('touchstart', (e) => {
+            if (!e.target.closest('button') && !e.target.closest('#start-modal')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { passive: false, capture: true });
+
+        window.addEventListener('keydown', (e) => e.preventDefault());
+    </script>
+</body>
+</html>
